@@ -1,0 +1,17 @@
+node_modules
+dist
+build
+coverage
+*.log
+*.tsbuildinfo
+.eslintcache
+.DS_Store
+.env
+.env.local
+
+# Per-session Claude Code state: `settings.local.json` is personal and
+# `.claude/worktrees/` holds git worktrees, so this
+# directory is tooling, never source. Untracked it shows as a permanent pending
+# change in every `git status` — and it is not merely cosmetic: a dirty repo
+# aborts dependency-bump automation at preflight.
+.claude

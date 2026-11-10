@@ -1,0 +1,74 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "baseBranches": [
+    "dev"
+  ],
+  "minimumReleaseAge": "3 days",
+  "rebaseWhen": "behind-base-branch",
+  "prConcurrentLimit": 5,
+  "prHourlyLimit": 2,
+  "postUpdateOptions": [
+    "pnpmDedupe"
+  ],
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": [
+      "before 6am on monday"
+    ]
+  },
+  "packageRules": [
+    {
+      "description": "pnpm itself is updated through packageManager / .tool-versions, not as a devDependency, so the dev-deps group never caught it: it got its own PR, no schedule, re-run on every rebase (32 factory CI runs in a day, 2026-10-07). Minor/patch ride the Monday group; majors still arrive alone.",
+      "matchPackageNames": ["pnpm"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "dev dependencies (non-major)",
+      "schedule": ["before 6am on monday"]
+    },
+    {
+      "description": "pnpm 11.12.0 self-installer regression breaks pnpm/action-setup in CI (integrity/undefined crash). Skip only that version; other pnpm updates allowed.",
+      "matchPackageNames": [
+        "pnpm"
+      ],
+      "allowedVersions": "!/^11\\.12\\.0$/"
+    },
+    {
+      "matchManagers": [
+        "npm"
+      ],
+      "semanticCommitType": "chore"
+    },
+    {
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
+      "matchDepTypes": [
+        "devDependencies"
+      ],
+      "groupName": "dev dependencies (non-major)",
+      "schedule": [
+        "before 6am on monday"
+      ]
+    },
+    {
+      "matchPackageNames": [
+        "typescript"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "enabled": false,
+      "description": "Block TypeScript major bumps. TS7 ships the native (Go) compiler, whose JS API shim lacks getParsedCommandLineOfConfigFile \u2014 @nestjs/cli's `nest start`/`nest build` crash on it. Matches the typescript override pinned in pnpm-workspace.yaml. Re-enable deliberately once the toolchain supports TS7."
+    },
+    {
+      "description": "Every @nestjs/* package must move together. The v12 line is ESM-only (\"type\": \"module\", a single ./index.js, no require condition), so a nest-monorepo major that lands without its siblings is red no matter what \u2014 @nestjs/jwt@12 peer-depends on @nestjs/common@12, and factory closed three such split PRs as superseded before grouping them. Mirrors the rule in factory and competition-factory-server.",
+      "matchPackageNames": [
+        "@nestjs/**"
+      ],
+      "groupName": "nest"
+    }
+  ]
+}

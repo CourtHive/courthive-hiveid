@@ -1,0 +1,24 @@
+# pnpm v11 reads project-level settings from pnpm-workspace.yaml (not from
+# .npmrc, which pnpm v11 no longer merges for non-auth keys). Mirrors
+# courthive-declarations / courthive-persons.
+
+allowBuilds:
+  '@swc/core': true
+  '@nestjs/core': true
+  bcrypt: set this to true or false
+  unrs-resolver: true
+
+# minimumReleaseAge keeps pnpm's supply-chain freshness check active for
+# third-party packages; our own packages are exempt.
+minimumReleaseAge: 1440
+minimumReleaseAgeExclude:
+  - 'tods-competition-factory'
+  - 'courthive-*'
+  - '@courthive/*'
+
+# Suppress the deps-status check before every `pnpm <script>` — lockfiles are
+# routinely briefly stale across the ecosystem's build cycles.
+verifyDepsBeforeRun: false
+
+overrides:
+  typescript: 6.0.3 # block native TS7 (no classic JS API — crashes tsc/nest/sonarjs)

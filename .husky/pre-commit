@@ -1,0 +1,4 @@
+# Fast local guard on every branch: lint + type-check. The full test suite runs in
+# CI (ci.yml, on PR and push to main), not here — keeps feature-branch commits quick.
+pnpm lint
+pnpm check-types
