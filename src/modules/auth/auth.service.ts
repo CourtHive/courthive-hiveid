@@ -63,9 +63,10 @@ const EMAIL_REGEX = /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i;
 
 const ALLOWED_ROLE_SET = new Set([...VALID_GLOBAL_ROLES, ...VALID_PROVIDER_ROLES, 'admin', 'official', 'director']);
 
-// Global roles a non-SUPER_ADMIN editor may not GRANT via modifyUser. Removing
-// them is allowed; only escalation is gated.
-const RESTRICTED_GRANT_ROLES = new Set<string>([SUPER_ADMIN, PROVISIONER_ROLE, 'developer']);
+// Global roles a non-SUPER_ADMIN editor may not GRANT, via modifyUser or adminCreateUser. Removing
+// them is allowed; only escalation is gated. `admin` ("Platform admin") is platform-wide — it opens
+// operator surfaces across every provider — so only a super-admin may hand it out (CA, 2026-11-12).
+const RESTRICTED_GRANT_ROLES = new Set<string>([SUPER_ADMIN, PROVISIONER_ROLE, 'developer', 'admin']);
 
 function assertNoPrivilegeEscalation(incomingRoles: unknown, currentRoles: unknown): void {
   if (!Array.isArray(incomingRoles)) return;
@@ -722,6 +723,9 @@ export class AuthService {
         provisionerProviderStorage: this.provisionerProviderStorage,
         isProvisioner: editor?.isProvisioner,
       });
+      // A new account holds nothing yet, so every restricted role it is created with is a grant.
+      // Without this, a provider admin could mint a super-admin through the create path.
+      assertNoPrivilegeEscalation(requestedRoles, []);
     }
 
     const existing = await this.userStorage.findOne(email);

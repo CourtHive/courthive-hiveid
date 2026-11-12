@@ -5,6 +5,56 @@ import { CachedPersonFields, IUserStorage, UserPersonLink } from './interfaces/u
 import { PG_POOL } from './postgres.config';
 import { SUCCESS } from 'src/common/constants/app';
 
+/**
+ * Fields the users table keeps in their own columns, each written by its own path (setContactEmail,
+ * markEmailVerified, setPersonLink, ...). `update` must never copy them into the legacy `data` JSONB:
+ * a copy there goes stale the moment the column is next written.
+ *
+ * It did, for contact email. An admin Save spread the whole user record into `data`, and the finders
+ * spread `data` AFTER the columns, so the stale copy won. On 2026-11-12 a corrected recovery email kept
+ * reading back as the typo: the console showed it, Send verification mailed it, and the verify link
+ * for the corrected address was refused as "contact email has changed".
+ */
+const COLUMN_OWNED_KEYS = [
+  'userId',
+  'email',
+  'personId',
+  'providerId',
+  'lastAccess',
+  'contactEmail',
+  'emailVerifiedAt',
+  'lastSelectedProviderId',
+] as const;
+
+/**
+ * One row → user mapping for every single-user finder. `data` is spread FIRST so no key in it can
+ * shadow a column (see COLUMN_OWNED_KEYS). `buildSessionPayload` signs this object into the login JWT,
+ * so the order is also what keeps the blob from forging `roles`, `permissions` or `personId`.
+ */
+function mapUserRow(row: any) {
+  return {
+    ...row.data,
+    userId: row.user_id,
+    email: row.email,
+    password: row.password,
+    lastSelectedProviderId: row.last_selected_provider_id,
+    mustChangePassword: row.must_change_password,
+    contactEmail: row.contact_email,
+    emailVerifiedAt: row.email_verified_at,
+    roles: row.roles,
+    permissions: row.permissions,
+    // Coalesce HiveID-cached canonical names (written by setPersonLink) into the legacy firstName/lastName
+    // surface so admin UI + email templates see a populated name for HiveID-linked users who never had
+    // names written through the JSON-blob path. Explicit `data.firstName` / `data.lastName` win when
+    // present so admin edits aren't shadowed.
+    firstName: row.data?.firstName ?? row.standard_given_name ?? undefined,
+    lastName: row.data?.lastName ?? row.standard_family_name ?? undefined,
+    // `person_id` is the canonical HiveID link, validated against courthive-persons. NULL becomes
+    // undefined so the claim is simply absent rather than present-and-null.
+    personId: row.person_id ?? undefined,
+  };
+}
+
 @Injectable()
 export class PostgresUserStorage implements IUserStorage {
   constructor(@Inject(PG_POOL) private readonly pool: Pool) {}
@@ -15,32 +65,7 @@ export class PostgresUserStorage implements IUserStorage {
       [email],
     );
     if (!result.rows.length) return null;
-    const row = result.rows[0];
-    return {
-      userId: row.user_id,
-      email: row.email,
-      password: row.password,
-      lastSelectedProviderId: row.last_selected_provider_id,
-      mustChangePassword: row.must_change_password,
-      contactEmail: row.contact_email,
-      emailVerifiedAt: row.email_verified_at,
-      roles: row.roles,
-      permissions: row.permissions,
-      ...row.data,
-      // Coalesce HiveID-cached canonical names (written by setPersonLink) into
-      // the legacy firstName/lastName surface so admin UI + email templates
-      // see a populated name for HiveID-linked users who never had names
-      // written through the JSON-blob path. Explicit `data.firstName` /
-      // `data.lastName` win when present so admin edits aren't shadowed.
-      firstName: row.data?.firstName ?? row.standard_given_name ?? undefined,
-      lastName: row.data?.lastName ?? row.standard_family_name ?? undefined,
-      // AFTER the `...row.data` spread on purpose: `person_id` is the canonical
-      // HiveID link written by setPersonLink and validated against
-      // courthive-persons. A stray `personId` inside the legacy `data` JSONB must
-      // never shadow it. NULL becomes undefined so the claim is simply absent
-      // rather than present-and-null.
-      personId: row.person_id ?? undefined,
-    };
+    return mapUserRow(result.rows[0]);
   }
 
   async findByContactEmail(contactEmail: string): Promise<any | null> {
@@ -52,27 +77,7 @@ export class PostgresUserStorage implements IUserStorage {
       [contactEmail],
     );
     if (!result.rows.length) return null;
-    const row = result.rows[0];
-    return {
-      userId: row.user_id,
-      email: row.email,
-      password: row.password,
-      lastSelectedProviderId: row.last_selected_provider_id,
-      mustChangePassword: row.must_change_password,
-      contactEmail: row.contact_email,
-      emailVerifiedAt: row.email_verified_at,
-      roles: row.roles,
-      permissions: row.permissions,
-      ...row.data,
-      firstName: row.data?.firstName ?? row.standard_given_name ?? undefined,
-      lastName: row.data?.lastName ?? row.standard_family_name ?? undefined,
-      // AFTER the `...row.data` spread on purpose: `person_id` is the canonical
-      // HiveID link written by setPersonLink and validated against
-      // courthive-persons. A stray `personId` inside the legacy `data` JSONB must
-      // never shadow it. NULL becomes undefined so the claim is simply absent
-      // rather than present-and-null.
-      personId: row.person_id ?? undefined,
-    };
+    return mapUserRow(result.rows[0]);
   }
 
   async create(user: { email: string; password: string; [key: string]: any }): Promise<any> {
@@ -103,9 +108,9 @@ export class PostgresUserStorage implements IUserStorage {
   }
 
   async update(email: string, data: any): Promise<{ success: boolean }> {
-    // `providerId` is dropped, as in `create`: users.provider_id is no longer written.
+    // Column-owned fields (including the retired `providerId`) never land in `data` — see COLUMN_OWNED_KEYS.
     const { password, roles = [], permissions = [], mustChangePassword, ...rest } = data;
-    delete rest.providerId;
+    for (const key of COLUMN_OWNED_KEYS) delete rest[key];
     await this.pool.query(
       `UPDATE users SET password = $2, roles = $3, permissions = $4, must_change_password = $5, data = $6, updated_at = NOW()
        WHERE email = $1`,
@@ -163,32 +168,14 @@ export class PostgresUserStorage implements IUserStorage {
 
   async findByUserId(userId: string): Promise<any | null> {
     const result = await this.pool.query(
-      `SELECT user_id, person_id, email, password, last_selected_provider_id, must_change_password, contact_email, email_verified_at, roles, permissions, data
+      `SELECT user_id, person_id, email, password, last_selected_provider_id, must_change_password, contact_email, email_verified_at, roles, permissions, data, standard_given_name, standard_family_name
          FROM users
         WHERE user_id = $1
         LIMIT 1`,
       [userId],
     );
     if (!result.rows.length) return null;
-    const row = result.rows[0];
-    return {
-      userId: row.user_id,
-      email: row.email,
-      password: row.password,
-      lastSelectedProviderId: row.last_selected_provider_id,
-      mustChangePassword: row.must_change_password,
-      contactEmail: row.contact_email,
-      emailVerifiedAt: row.email_verified_at,
-      roles: row.roles,
-      permissions: row.permissions,
-      ...row.data,
-      // AFTER the `...row.data` spread on purpose: `person_id` is the canonical
-      // HiveID link written by setPersonLink and validated against
-      // courthive-persons. A stray `personId` inside the legacy `data` JSONB must
-      // never shadow it. NULL becomes undefined so the claim is simply absent
-      // rather than present-and-null.
-      personId: row.person_id ?? undefined,
-    };
+    return mapUserRow(result.rows[0]);
   }
 
   async getContactEmailCoverage(): Promise<{
@@ -258,6 +245,8 @@ export class PostgresUserStorage implements IUserStorage {
         u.permissions,
         u.data,
         u.last_access,
+        u.contact_email,
+        u.email_verified_at,
         u.standard_given_name,
         u.standard_family_name,
         COALESCE(
@@ -266,7 +255,8 @@ export class PostgresUserStorage implements IUserStorage {
         ) AS provider_ids
       FROM users u
       LEFT JOIN user_providers up ON up.user_id = u.user_id
-      GROUP BY u.user_id, u.email, u.roles, u.permissions, u.data, u.last_access, u.standard_given_name, u.standard_family_name
+      GROUP BY u.user_id, u.email, u.roles, u.permissions, u.data, u.last_access, u.contact_email, u.email_verified_at,
+               u.standard_given_name, u.standard_family_name
     `);
     if (!result.rows.length) return { success: false, message: 'No users found' };
     // Spread `data` first so canonical column-derived fields win on conflict.
@@ -282,7 +272,11 @@ export class PostgresUserStorage implements IUserStorage {
         roles: row.roles,
         permissions: row.permissions,
         lastAccess: row.last_access,
-        // Same coalesce as findOne — see comment there.
+        // The admin console's edit modal reads these from the list row; without the columns it could
+        // only show a `data` copy, which is how a corrected recovery email kept displaying the typo.
+        contactEmail: row.contact_email,
+        emailVerifiedAt: row.email_verified_at,
+        // Same coalesce as mapUserRow — see comment there.
         firstName: row.data?.firstName ?? row.standard_given_name ?? undefined,
         lastName: row.data?.lastName ?? row.standard_family_name ?? undefined,
       },
