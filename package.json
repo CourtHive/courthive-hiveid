@@ -2,7 +2,7 @@
   "name": "courthive-hiveid",
   "packageManager": "pnpm@12.16.1",
   "private": true,
-  "version": "0.4.3",
+  "version": "0.4.4",
   "description": "HiveID auth/identity provider (IdP) for the CourtHive ecosystem. The dedicated ES256 token signer + auth authority lifted out of competition-factory-server; other services are relying parties. NestJS + Postgres (users in the shared courthive DB).",
   "author": "Charles Allen <charles@CourtHive.com> (CourtHive.com)",
   "license": "MIT",
