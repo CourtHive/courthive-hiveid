@@ -170,8 +170,8 @@ importers:
   .:
     dependencies:
       '@courthive/provider-config':
-        specifier: 1.1.0
-        version: 1.1.0
+        specifier: 1.2.0
+        version: 1.2.0
       '@nestjs/common':
         specifier: 12.3.2
         version: 12.3.2(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1)
@@ -462,8 +462,8 @@ packages:
     resolution: {integrity: sha512-aalGyl7dbB5PArRebDIX43ZvBlXrYm9uWzGJ26t+4SzJVPsOuvfILGGbw5X4yX7i50YEmJ8zvbiWnqH/AAnZqg==}
     engines: {node: '>=22'}
 
-  '@courthive/provider-config@1.1.0':
-    resolution: {integrity: sha512-sldldbImUTnbGUgPWah6PFQocO55mf02AXkuwZFuvvxR7qqZdkLjaE71LNK+n8oGblM4voub5h1l+YNq3Hf6Gw==}
+  '@courthive/provider-config@1.2.0':
+    resolution: {integrity: sha512-/PC/wT/fUgKEm52noVibztV+HMKE9Z+LZ5a0Zel6U1NhLvs6ALvEi/Wh/it1lbPUJYfTJviVSVGPs/GhKy5GPw==}
     engines: {node: '>=24'}
 
   '@dual-bundle/import-meta-resolve@4.2.1':
@@ -3433,7 +3433,7 @@ snapshots:
 
   '@conventional-changelog/template@1.4.0': {}
 
-  '@courthive/provider-config@1.1.0': {}
+  '@courthive/provider-config@1.2.0': {}
 
   '@dual-bundle/import-meta-resolve@4.2.1': {}
 
