@@ -5,6 +5,7 @@ import bcrypt from 'bcryptjs';
 import { audienceMatches } from 'src/common/auth/guards/auth.guard';
 import { PROVIDER_SELECTION_PURPOSE } from './helpers/actingProvider';
 import { resetSigningKeyCacheForTests } from 'src/common/auth/signJwt';
+import { PROVISIONER } from 'src/common/constants/roles';
 import { AuthService } from './auth.service';
 
 /**
@@ -19,15 +20,19 @@ const PASSWORD = 'correct horse';
 const PROVIDERS: Record<string, any> = {
   club: { organisationId: 'club', organisationName: 'Club', organisationAbbreviation: 'CLB' },
   league: { organisationId: 'league', organisationName: 'League', organisationAbbreviation: 'LGE' },
+  boca: { organisationId: 'boca', organisationName: 'Boca', organisationAbbreviation: 'BOC' },
+  arena: { organisationId: 'arena', organisationName: 'Arena', organisationAbbreviation: 'ARN' },
 };
 
-function make(options: { associations?: string[]; lastSelected?: string | null } = {}) {
+function make(options: { associations?: string[]; lastSelected?: string | null; managed?: string[] } = {}) {
   const associations = options.associations ?? ['club', 'league'];
+  // providers the user's provisioner manages: only read for a user holding the provisioner role
+  const managed = options.managed;
   const user = {
     userId: 'u1',
     email: 'director@x.org',
     password: bcrypt.hashSync(PASSWORD, 4),
-    roles: ['client'],
+    roles: managed ? ['client', PROVISIONER] : ['client'],
     providerId: 'club', // the legacy home column: it must NOT decide anything for a multi-provider user
     lastSelectedProviderId: options.lastSelected ?? null,
   };
@@ -69,9 +74,9 @@ function make(options: { associations?: string[]; lastSelected?: string | null }
     jwt,
     providerStorage,
     userStorage,
-    { findProvisionerIdsByUser: vi.fn().mockResolvedValue([]) } as any,
+    { findProvisionerIdsByUser: vi.fn().mockResolvedValue(managed ? ['prov1'] : []) } as any,
     userProviderStorage,
-    { findByProvisioner: vi.fn().mockResolvedValue([]) } as any,
+    { findByProvisioner: vi.fn(async () => (managed ?? []).map((providerId) => ({ providerId }))) } as any,
     refreshTokenService,
     {} as any,
     {} as any,
@@ -180,5 +185,61 @@ describe('two-step login', () => {
     expect((jwt.decode(result.token) as any).providerId).toBe('club');
     // nothing pinned: their session rebuilds exactly as before on refresh
     expect(refreshTokenService.issue.mock.calls.at(-1)[3]).toBeUndefined();
+  });
+
+  describe('providers reached through a provisioner', () => {
+    it('the picker lists them after the direct ones, each marked, with no duplicate', async () => {
+      // 'league' is both a direct association and managed: it appears once, as the direct one
+      const { service } = make({ managed: ['league', 'boca', 'arena'] });
+      const result: any = await service.signIn('director@x.org', PASSWORD);
+      expect(result.providerSelectionRequired).toBe(true);
+      expect(result.providers.map((p: any) => [p.providerId, !!p.viaProvisioner])).toEqual([
+        ['club', false],
+        ['league', false],
+        ['boca', true],
+        ['arena', true],
+      ]);
+      expect(result.providers[2]).toMatchObject({ organisationName: 'Boca', organisationAbbreviation: 'BOC' });
+    });
+
+    it('one of them can be chosen, and the choice is remembered for the next picker', async () => {
+      const { service, jwt, userStorage, user } = make({ managed: ['boca'] });
+      const { selectionToken }: any = await service.signIn('director@x.org', PASSWORD);
+      const session: any = await service.selectProvider('boca', jwt.decode(selectionToken));
+      expect((jwt.decode(session.token) as any).providerId).toBe('boca');
+      expect(userStorage.updateLastSelectedProviderId).toHaveBeenCalledWith(user.email, 'boca');
+
+      // the remembered pick survives the next login instead of being dropped as "not an association"
+      const again = make({ managed: ['boca'], lastSelected: 'boca' });
+      const next: any = await again.service.signIn('director@x.org', PASSWORD);
+      expect(next.lastSelectedProviderId).toBe('boca');
+    });
+
+    it('a remembered pick no longer reachable is dropped', async () => {
+      const { service } = make({ managed: ['arena'], lastSelected: 'boca' });
+      const result: any = await service.signIn('director@x.org', PASSWORD);
+      expect(result.lastSelectedProviderId).toBeNull();
+    });
+
+    it('a session that has not chosen (account verification) carries the same list for the client to render', async () => {
+      const { service, user } = make({ managed: ['boca'] });
+      const payload: any = await service.buildSessionPayload({ ...user });
+      expect(payload.providerSelectionRequired).toBe(true);
+      expect(payload.choosableProviders.map((p: any) => p.providerId)).toEqual(['club', 'league', 'boca']);
+      // the direct associations keep their meaning: permissions read them, so nothing inherited is added there
+      expect(payload.providerAssociations.map((p: any) => p.providerId)).toEqual(['club', 'league']);
+    });
+
+    it('WHEN the picker appears is unchanged: one direct association still signs straight in', async () => {
+      // the headless-client case: a password login must keep answering with a session, not a selection token
+      const { service, jwt } = make({ associations: ['club'], managed: ['boca', 'arena'] });
+      const result: any = await service.signIn('director@x.org', PASSWORD);
+      expect(result.providerSelectionRequired).toBeUndefined();
+      expect(result.token).toBeDefined();
+      const claims: any = jwt.decode(result.token);
+      expect(claims.providerId).toBe('club');
+      // the list only rides on a session that has not chosen
+      expect(claims.choosableProviders).toBeUndefined();
+    });
   });
 });
