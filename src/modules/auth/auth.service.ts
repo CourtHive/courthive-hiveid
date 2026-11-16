@@ -38,6 +38,7 @@ import {
   PROVIDER_SELECTION_PURPOSE,
   PROVIDER_SELECTION_TTL,
   resolveActingProviderId,
+  choosableProviders,
 } from './helpers/actingProvider';
 
 // Access-token (session JWT) lifetime. Short because TMX silently refreshes it
@@ -181,7 +182,7 @@ export class AuthService {
     );
     return {
       providerSelectionRequired: true as const,
-      providers: userDetails.providerAssociations,
+      providers: userDetails.choosableProviders,
       // preselected in the picker; the user still confirms
       lastSelectedProviderId: userDetails.lastSelectedProviderId ?? null,
       selectionToken,
@@ -252,10 +253,6 @@ export class AuthService {
     }
     userDetails.providerAssociations = associations;
     userDetails.providerIds = associations.map((a) => a.providerId);
-    if (userDetails.lastSelectedProviderId) {
-      const stillValid = associations.some((a) => a.providerId === userDetails.lastSelectedProviderId);
-      if (!stillValid) userDetails.lastSelectedProviderId = null;
-    }
 
     const isSuperAdmin = (user.roles ?? []).includes(SUPER_ADMIN);
 
@@ -284,6 +281,14 @@ export class AuthService {
     delete userDetails.provider;
     delete userDetails.activeProviderConfig;
     userDetails.providerSelectionRequired = !actingProviderId && !isSuperAdmin && associations.length > 1;
+    // read after the provisioner context loads: a remembered pick of a managed provider is still a valid pick
+    const choosable = choosableProviders(associations, userDetails.provisionerProviders);
+    if (userDetails.lastSelectedProviderId) {
+      const stillValid = choosable.some((p) => p.providerId === userDetails.lastSelectedProviderId);
+      if (!stillValid) userDetails.lastSelectedProviderId = null;
+    }
+    // the picker's list rides only on a session that has not chosen; clients render it as given
+    if (userDetails.providerSelectionRequired) userDetails.choosableProviders = choosable;
     if (actingProviderId) {
       userDetails.providerId = actingProviderId;
       const provider = await this.providerStorage.getProvider(actingProviderId);
