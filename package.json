@@ -15,7 +15,7 @@
     "url": "git+https://github.com/CourtHive/courthive-hiveid.git"
   },
   "engines": {
-    "node": ">=24"
+    "node": ">=26"
   },
   "scripts": {
     "build": "rimraf build tsconfig.build.tsbuildinfo tsconfig.tsbuildinfo && nest build -p tsconfig.build.json",
