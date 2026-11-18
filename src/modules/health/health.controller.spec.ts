@@ -12,13 +12,13 @@ describe('HealthController', () => {
   it('reports liveness on /health', () => {
     const controller = new HealthController(poolMock(vi.fn()));
     // The node block is asserted, not tolerated. NestJS 12 is ESM-only and this
-    // service reaches it through `require(esm)`. Node 24 is the ecosystem floor; a
+    // service reaches it through `require(esm)`. Node 26 is the ecosystem floor; a
     // host below it is unsupported, and a /health that answered a bare `ok` would
     // look identical on one.
     expect(controller.check()).toEqual({
       status: 'ok',
       service: 'courthive-hiveid',
-      node: { version: process.version, minimum: '>=24', satisfied: true },
+      node: { version: process.version, minimum: '>=26', satisfied: true },
     });
   });
 
