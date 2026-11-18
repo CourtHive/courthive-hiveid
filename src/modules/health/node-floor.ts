@@ -1,4 +1,5 @@
-// The Node floor is the ecosystem minimum: Node 24, the LTS line.
+// The Node floor is the ecosystem minimum: Node 26 (CA 2026-11-18; it was 24 from 2026-10-21). CI and every
+// host run 26.
 // Node 22 is maintenance-only and reaches end of life in April 2027.
 //
 // The floor is reported, not assumed. NestJS 12 is ESM-only: @nestjs/common@12
@@ -10,7 +11,7 @@
 //
 // Keep this constant and package.json's `engines.node` in step; the spec reads
 // both.
-export const NODE_FLOOR = { major: 24, minor: 0 } as const;
+export const NODE_FLOOR = { major: 26, minor: 0 } as const;
 export const NODE_FLOOR_RANGE = NODE_FLOOR.minor
   ? `>=${NODE_FLOOR.major}.${NODE_FLOOR.minor}`
   : `>=${NODE_FLOOR.major}`;

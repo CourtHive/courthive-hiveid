@@ -15,7 +15,7 @@ export class HealthController {
   check() {
     // The node floor is reported, not assumed. NestJS 12 is ESM-only and this
     // service is CommonJS, so it loads Nest through `require(esm)`; the floor is
-    // Node 24, the ecosystem minimum. A check that answered a bare "ok" would say the same
+    // Node 26, the ecosystem minimum. A check that answered a bare "ok" would say the same
     // thing on a host that cannot import Nest at all, which is the failure this
     // field exists to make visible. See node-floor.ts.
     const node = checkNodeFloor();
